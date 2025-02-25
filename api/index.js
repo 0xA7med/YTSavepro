@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { video_info, stream } = require('play-dl');
+const ytdl = require('ytdl-core');
 
 const app = express();
 
@@ -22,30 +22,24 @@ app.get('/api/info', async (req, res) => {
 
     console.log('🔍 جاري جلب معلومات الفيديو:', url);
     
-    const info = await video_info(url).catch(error => {
-      console.error('خطأ في video_info:', error);
-      throw new Error(`فشل في جلب معلومات الفيديو: ${error.message}`);
-    });
-
-    if (!info || !info.video_details) {
+    const info = await ytdl.getInfo(url);
+    
+    if (!info || !info.formats) {
       throw new Error('لم يتم العثور على معلومات الفيديو');
     }
 
     // تحويل المعلومات إلى الشكل المطلوب
-    const formats = (info.format || [])
-      .filter(format => format && (
-        (format.mimeType && (format.mimeType.includes('video/mp4') || format.mimeType.includes('audio/mp4'))) ||
-        (format.format_note && format.format_note.includes('mp4'))
-      ))
+    const formats = info.formats
+      .filter(format => format.container === 'mp4')
       .map(format => ({
-        itag: format.itag || format.format_id,
-        quality: format.qualityLabel || format.quality || (format.audioQuality ? 'Audio' : 'Unknown'),
-        hasAudio: Boolean(format.audioQuality || format.acodec !== 'none'),
-        hasVideo: Boolean(format.qualityLabel || format.height),
-        container: 'mp4',
+        itag: format.itag,
+        quality: format.qualityLabel || (format.audioBitrate ? 'Audio' : 'Unknown'),
+        hasAudio: Boolean(format.hasAudio),
+        hasVideo: Boolean(format.hasVideo),
+        container: format.container,
         fps: format.fps,
-        filesize: parseInt(format.contentLength || format.filesize) || 0,
-        audioQuality: format.audioQuality || (format.acodec !== 'none' ? format.acodec : null)
+        filesize: parseInt(format.contentLength) || 0,
+        audioQuality: format.audioBitrate ? `${format.audioBitrate}kbps` : null
       }))
       .filter(format => format.quality !== 'Unknown')
       .sort((a, b) => {
@@ -59,31 +53,18 @@ app.get('/api/info', async (req, res) => {
         return 0;
       });
 
-    // اختيار أفضل صورة مصغرة
-    const thumbnails = info.video_details.thumbnails || [];
-    const thumbnail = thumbnails.length > 0 
-      ? thumbnails.reduce((prev, current) => {
-          return (prev.width > current.width) ? prev : current;
-        }, thumbnails[0])
-      : null;
-
     const responseData = {
-      title: info.video_details.title || 'بدون عنوان',
-      thumbnail: thumbnail?.url || '',
-      duration: info.video_details.durationInSec || 0,
-      views: info.video_details.views || 0,
+      title: info.videoDetails.title || 'بدون عنوان',
+      thumbnail: info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1]?.url || '',
+      duration: parseInt(info.videoDetails.lengthSeconds) || 0,
+      views: parseInt(info.videoDetails.viewCount) || 0,
       formats: formats || [],
     };
 
-    console.log('تم جلب معلومات الفيديو بنجاح');
     res.json(responseData);
   } catch (error) {
     console.error('❌ خطأ في جلب معلومات الفيديو:', error);
-    console.error('تفاصيل الخطأ:', error.stack);
-    res.status(500).json({ 
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -96,40 +77,22 @@ app.get('/api/download', async (req, res) => {
       return res.status(400).json({ error: 'يجب توفير رابط الفيديو والجودة المطلوبة' });
     }
 
-    console.log(`🚀 بدء تحميل الفيديو بجودة ${itag}...`);
+    const info = await ytdl.getInfo(url);
+    const format = info.formats.find(f => f.itag === itag);
 
-    const videoStream = await stream(url, { quality: parseInt(itag) }).catch(error => {
-      console.error('خطأ في stream:', error);
-      throw new Error(`فشل في تحميل الفيديو: ${error.message}`);
-    });
-    
-    if (!videoStream || !videoStream.stream) {
-      throw new Error('فشل في إنشاء تدفق الفيديو');
+    if (!format) {
+      throw new Error('الجودة المطلوبة غير متوفرة');
     }
 
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+    res.setHeader('Content-Disposition', `attachment; filename="${info.videoDetails.title}.mp4"`);
 
-    videoStream.stream.pipe(res);
-
-    videoStream.stream.on('error', (error) => {
-      console.error('❌ خطأ في تدفق الفيديو:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'فشل في تحميل الفيديو' });
-      }
-    });
-
-    videoStream.stream.on('end', () => {
-      console.log('✅ تم تحميل الفيديو بنجاح!');
-    });
+    ytdl(url, { format }).pipe(res);
 
   } catch (error) {
     console.error('❌ خطأ في تحميل الفيديو:', error);
     if (!res.headersSent) {
-      res.status(500).json({ 
-        error: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
+      res.status(500).json({ error: error.message });
     }
   }
 });
@@ -143,9 +106,5 @@ app.use((err, req, res, next) => {
   });
 });
 
-// تعريف المنفذ
 const port = process.env.PORT || 3000;
-
-app.listen(port, () => {
-  console.log(`🚀 الخادم يعمل على المنفذ ${port}`);
-});
+app.listen(port, () => console.log(`🚀 الخادم يعمل على المنفذ ${port}`));
