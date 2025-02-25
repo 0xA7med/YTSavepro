@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { Video, Music4, Zap, Smartphone, Loader2, Clipboard } from 'lucide-react';
 import type { VideoInfo, VideoFormat, ApiError } from './types';
+import axios from 'axios';
+
+// تكوين عنوان API
+const API_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://yt-savepro.vercel.app/api' 
+  : 'http://localhost:3000/api';
 
 function App() {
   const [url, setUrl] = useState('');
@@ -113,8 +119,10 @@ function App() {
     setSelectedFormat(null);
 
     try {
-      const response = await fetch(`http://localhost:3000/api/info?url=${encodeURIComponent(url)}`);
-      const data = await response.json();
+      const response = await axios.get(`${API_URL}/info`, {
+        params: { url: encodeURIComponent(url) }
+      });
+      const data = response.data;
 
       if (!response.ok) {
         throw new Error((data as ApiError).error || 'Failed to fetch video information');
@@ -129,8 +137,11 @@ function App() {
   };
 
   const handleDownload = async (format: VideoFormat) => {
-    const downloadUrl = `http://localhost:3000/api/download?url=${encodeURIComponent(url)}&itag=${format.itag}`;
-    window.location.href = downloadUrl;
+    try {
+      window.location.href = `${API_URL}/download?url=${encodeURIComponent(url)}&itag=${format.itag}`;
+    } catch (error) {
+      console.error('Download error:', error);
+    }
   };
 
   const handlePaste = async () => {
