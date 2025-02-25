@@ -8,9 +8,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// التعامل مع طلبات OPTIONS
-app.options('*', cors());
-
 // الحصول على معلومات الفيديو
 app.get('/api/info', async (req, res) => {
   try {
@@ -20,9 +17,13 @@ app.get('/api/info', async (req, res) => {
       return res.status(400).json({ error: 'يجب توفير رابط الفيديو' });
     }
 
+    if (!ytdl.validateURL(url)) {
+      return res.status(400).json({ error: 'رابط الفيديو غير صالح' });
+    }
+
     console.log('🔍 جاري جلب معلومات الفيديو:', url);
     
-    const info = await ytdl.getInfo(url);
+    const info = await ytdl.getBasicInfo(url);
     
     if (!info || !info.formats) {
       throw new Error('لم يتم العثور على معلومات الفيديو');
@@ -30,12 +31,12 @@ app.get('/api/info', async (req, res) => {
 
     // تحويل المعلومات إلى الشكل المطلوب
     const formats = info.formats
-      .filter(format => format.container === 'mp4')
+      .filter(format => format.container === 'mp4' && (format.hasVideo || format.hasAudio))
       .map(format => ({
         itag: format.itag,
-        quality: format.qualityLabel || (format.audioBitrate ? 'Audio' : 'Unknown'),
-        hasAudio: Boolean(format.hasAudio),
-        hasVideo: Boolean(format.hasVideo),
+        quality: format.qualityLabel || (format.audioBitrate ? `Audio ${format.audioBitrate}kbps` : 'Unknown'),
+        hasAudio: format.hasAudio,
+        hasVideo: format.hasVideo,
         container: format.container,
         fps: format.fps,
         filesize: parseInt(format.contentLength) || 0,
@@ -77,15 +78,20 @@ app.get('/api/download', async (req, res) => {
       return res.status(400).json({ error: 'يجب توفير رابط الفيديو والجودة المطلوبة' });
     }
 
-    const info = await ytdl.getInfo(url);
-    const format = info.formats.find(f => f.itag === itag);
+    if (!ytdl.validateURL(url)) {
+      return res.status(400).json({ error: 'رابط الفيديو غير صالح' });
+    }
+
+    const info = await ytdl.getBasicInfo(url);
+    const format = ytdl.chooseFormat(info.formats, { quality: itag });
 
     if (!format) {
       throw new Error('الجودة المطلوبة غير متوفرة');
     }
 
+    const sanitizedTitle = info.videoDetails.title.replace(/[^\w\s-]/g, '');
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${info.videoDetails.title}.mp4"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${sanitizedTitle}.mp4"`);
 
     ytdl(url, { format }).pipe(res);
 
