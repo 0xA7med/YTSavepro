@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Video, Music4, Zap, Smartphone, Loader2, Clipboard } from 'lucide-react';
 import type { VideoInfo, VideoFormat, ApiError } from './types';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 // تكوين عنوان API
 const API_URL = process.env.NODE_ENV === 'production' 
@@ -14,13 +14,14 @@ const api = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json'
   }
 });
 
 function App() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [language, setLanguage] = useState<'en' | 'ar'>('en');
+  const [language, setLanguage] = useState<'en' | 'ar'>('ar');
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat | null>(null);
@@ -36,7 +37,8 @@ function App() {
       error: {
         invalidUrl: 'Invalid YouTube URL',
         fetchError: 'Failed to fetch video information',
-        downloadError: 'Failed to download video'
+        downloadError: 'Failed to download video',
+        emptyUrl: 'Please enter a YouTube URL'
       },
       videoInfo: {
         title: 'Video Title',
@@ -80,7 +82,8 @@ function App() {
       error: {
         invalidUrl: 'رابط يوتيوب غير صالح',
         fetchError: 'فشل في جلب معلومات الفيديو',
-        downloadError: 'فشل في تحميل الفيديو'
+        downloadError: 'فشل في تحميل الفيديو',
+        emptyUrl: 'الرجاء إدخال رابط يوتيوب'
       },
       videoInfo: {
         title: 'عنوان الفيديو',
@@ -118,32 +121,41 @@ function App() {
 
   const t = translations[language];
 
+  const isValidYoutubeUrl = (url: string): boolean => {
+    const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/;
+    return pattern.test(url.trim());
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
-    setVideoInfo(null);
-    setSelectedFormat(null);
-
+    setError('');
+    
     try {
-      const encodedUrl = encodeURIComponent(url.trim());
-      const response = await api.get<VideoInfo>('/info', {
-        params: { url: encodedUrl }
-      });
+        const encodedUrl = encodeURI(url);
+        console.log('🔍 جاري إرسال الطلب:', url);
+        const response = await api.get<VideoInfo>('/info', { params: { url: encodedUrl } });
+        console.log('✅ استجابة الخادم:', response.data);
 
-      if (response.status !== 200) {
-        throw new Error('فشل في جلب معلومات الفيديو');
-      }
+        if ('error' in response.data) {
+          throw new Error(response.data.error);
+        }
 
-      const data = response.data;
-      if (!data || !data.formats || data.formats.length === 0) {
-        throw new Error('لم يتم العثور على معلومات الفيديو');
-      }
+        const videoData = response.data as VideoInfo;
+        if (!videoData.formats || videoData.formats.length === 0) {
+          throw new Error('لم يتم العثور على صيغ متاحة للفيديو');
+        }
 
-      setVideoInfo(data);
+        setVideoInfo(videoData);
     } catch (error) {
-      console.error('Error fetching video info:', error);
-      setError(error instanceof Error ? error.message : 'حدث خطأ أثناء جلب معلومات الفيديو');
+      console.error('❌ خطأ في جلب معلومات الفيديو:', error);
+      
+      if (error instanceof AxiosError) {
+        const errorMessage = error.response?.data?.error || error.message;
+        setError(errorMessage);
+      } else {
+        setError(error instanceof Error ? error.message : t.error.fetchError);
+      }
     } finally {
       setLoading(false);
     }
@@ -151,22 +163,37 @@ function App() {
 
   const handleDownload = async (format: VideoFormat) => {
     try {
-      const encodedUrl = encodeURIComponent(url.trim());
-      window.location.href = `${API_URL}/download?url=${encodedUrl}&itag=${format.itag}`;
+      if (!isValidYoutubeUrl(url)) {
+        throw new Error(t.error.invalidUrl);
+      }
+
+      const encodedUrl = encodeURI(url.trim());
+      const downloadUrl = `${API_URL}/download?url=${encodedUrl}&itag=${format.itag}`;
+      
+      console.log('📥 بدء التحميل:', {
+        url: encodedUrl,
+        itag: format.itag,
+        quality: format.quality
+      });
+
+      window.location.href = downloadUrl;
     } catch (error) {
-      console.error('Download error:', error);
-      setError(error instanceof Error ? error.message : 'حدث خطأ أثناء التحميل');
+      console.error('❌ خطأ في التحميل:', error);
+      setError(error instanceof Error ? error.message : t.error.downloadError);
     }
   };
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text.includes('youtube.com') || text.includes('youtu.be')) {
+      if (isValidYoutubeUrl(text)) {
         setUrl(text);
+        setError(null);
+      } else {
+        setError(t.error.invalidUrl);
       }
     } catch (error) {
-      console.error('Paste error:', error);
+      console.error('❌ خطأ في لصق الرابط:', error);
     }
   };
 
