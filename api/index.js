@@ -12,20 +12,22 @@ if (!API_KEY) {
 
 console.log(`🔑 تم تحميل مفتاح API: ${API_KEY.substring(0, 8)}...`);
 
-// تهيئة play-dl
-(async () => {
+// تهيئة play-dl مع الكوكيز
+const initPlayDL = async () => {
     try {
         await playdl.setToken({
             youtube: {
-                cookie: process.env.YOUTUBE_COOKIE || ''
+                cookie: `SID=g.a000tQhow7geJZpBtLbaPDK_cMNkcpDcpWGWSMDJL3RQQLq7cIVADvnYWAomxciohVdtzeiqtgACgYKAS4SARQSFQHGX2MifABpkTQ-y-1yocitwvDFlxoVAUF8yKrLpTM9v_tEF6E4O2tSmhJU0076; __Secure-1PSID=g.a000tQhow7geJZpBtLbaPDK_cMNkcpDcpWGWSMDJL3RQQLq7cIVAd51Q8GmI_4F0sArLW6rpXQACgYKAXkSARQSFQHGX2MiNqCWJ_kGwloB2INW5Xb9zhoVAUF8yKq1En3JAxhJDOasFidSHwF50076; __Secure-3PSID=g.a000tQhow7geJZpBtLbaPDK_cMNkcpDcpWGWSMDJL3RQQLq7cIVAvTbl4Otg1OrFU_MCMgLa9QACgYKAXkSARQSFQHGX2MiOI9C6mWLfC1wXuAagh-G5xoVAUF8yKruKpg5mj1cRLG-SdKshYXv0076; HSID=AHSB4ZxGVcZzfSMdx; SSID=A0EREnGtbtu62cPbe; APISID=cqLL8dAfuOuNzIV8/AhI2Ff-qit72KBqPH; SAPISID=7bedCbXyCFmRNkBK/AFkXKvCeHNb_K2QP7; __Secure-1PAPISID=7bedCbXyCFmRNkBK/AFkXKvCeHNb_K2QP7; __Secure-3PAPISID=7bedCbXyCFmRNkBK/AFkXKvCeHNb_K2QP7; LOGIN_INFO=AFmmF2swRAIgSZ7crhdUHxdo8LlnXwgxdqryplBlZa0JrCoRjvbbrYwCICg35OH54LM3Os4um0YYbUpoaQoXsstn1npQWeJeDok2:QUQ3MjNmd05iQkxyZXRpZXVLZFVMTWhMWVFKalVBYlVqRlNCV2JHdG4xVE83dHVWZ0Jybm9Yd0QzazlsMkNkVWpab3NrUXZkb2Z4Q0QyWXpBUmIyNU9KdHpkLXVwUFR5N1NHcWFMSlFpMjJuUUJ3VTRDWnlXV0o1ZTJBbG04MHhobm1GWUJUUkFoS1J1MW1FMnlrOThCaG5iRF9ZN0xKY2N3; PREF=tz=Africa.Cairo&f6=40000000&f7=100; __Secure-1PSIDTS=sidts-CjEBEJ3XV3_z31puNOt7Un0CqUZ-RmKkzesUrt_tpfWdml02p_yWN8YE1S4V05q0E4JZEAA; __Secure-3PSIDTS=sidts-CjEBEJ3XV3_z31puNOt7Un0CqUZ-RmKkzesUrt_tpfWdml02p_yWN8YE1S4V05q0E4JZEAA; SIDCC=AKEyXzVaKOdpg4Y4s_j6JBF-_ZPQnc2jDId24v3V0IVAheLN-RYNCIlRpf3zNtqk5l9ULCGwZO8; __Secure-1PSIDCC=AKEyXzVgUcr21k42A43g9C0CTz5wVA4jRWY0RcfyiUMwyZm19wO9zBRZmr2gSoAA0YmQcZ0me5w; __Secure-3PSIDCC=AKEyXzWQig3X9QBDc84i9_8iQIs8REzVzkecK9AFuzFifpMBgMaRGE7tyoOUmAzqT3Ykn4rFJNc; VISITOR_INFO1_LIVE=Iql3k0bgMD0; VISITOR_PRIVACY_METADATA=CgJFRxIEGgAgGw%3D%3D; YSC=qLzeGaUVXWU`
             }
         });
-        console.log('✅ تم تهيئة play-dl بنجاح');
+        console.log('✅ تم تهيئة play-dl بنجاح مع الكوكيز');
     } catch (error) {
         console.error('❌ خطأ في تهيئة play-dl:', error);
-        process.exit(1); // إضافة هذا السطر لإيقاف تشغيل الخادم في حالة فشل تهيئة play-dl
     }
-})();
+};
+
+// استدعاء التهيئة عند بدء التطبيق
+initPlayDL();
 
 const app = express();
 app.use(cors());
