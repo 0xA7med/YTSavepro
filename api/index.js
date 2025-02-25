@@ -42,93 +42,57 @@ function extractVideoID(url) {
 // الحصول على معلومات الفيديو
 app.get('/api/info', async (req, res) => {
     try {
-        let { url } = req.query;
-        console.log('📥 URL المستلم:', url);
-
-        // فك ترميز URL
-        url = decodeURIComponent(decodeURIComponent(url));
+        const url = decodeURIComponent(req.query.url);
+        console.log('📌 URL المستلم:', url);
         console.log('🔄 URL بعد فك الترميز:', url);
 
-        if (!url) {
-            throw new Error('URL مطلوب');
-        }
-
-        // التحقق من صحة URL
-        if (!url.match(/^https?:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]+$/)) {
-            throw new Error('رابط يوتيوب غير صالح');
-        }
-
         console.log('🔄 جاري جلب معلومات الفيديو...');
-        
-        // إضافة تأخير قصير قبل الطلب
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        let dlInfo;
-        try {
-            dlInfo = await playdl.video_basic_info(url);
-            console.log('✅ تم جلب معلومات الفيديو الأساسية');
-        } catch (error) {
-            console.error('❌ خطأ في جلب معلومات الفيديو:', error);
-            throw new Error('فشل في جلب معلومات الفيديو: ' + error.message);
-        }
-        
-        if (!dlInfo || !dlInfo.video_details) {
-            throw new Error('لم يتم العثور على معلومات الفيديو');
-        }
+        const info = await playdl.video_basic_info(url);
+        console.log('✅ تم جلب معلومات الفيديو الأساسية');
+        console.log('📹 عنوان الفيديو:', info.video_details.title);
 
-        const video = dlInfo.video_details;
-        console.log('📹 عنوان الفيديو:', video.title);
-
-        let formats = [];
-        try {
-            console.log('🔄 جاري جلب معلومات الصيغ...');
-            const streamData = await playdl.stream_from_info(dlInfo);
-            console.log('✅ تم جلب معلومات الصيغ');
+        // استخراج الصيغ من معلومات الفيديو الأساسية
+        const formats = info.format.map(format => {
+            console.log('🔄 معالجة الصيغة:', {
+                itag: format.itag,
+                quality: format.qualityLabel,
+                hasAudio: format.hasAudio,
+                hasVideo: format.hasVideo
+            });
             
-            if (streamData && streamData.format) {
-                formats = streamData.format
-                    .filter(format => 
-                        format.mimeType?.includes('video/mp4') || 
-                        format.mimeType?.includes('audio/mp4')
-                    )
-                    .map(format => ({
-                        itag: format.itag,
-                        quality: format.qualityLabel || (format.audioBitrate ? `Audio ${format.audioBitrate}kbps` : 'Unknown'),
-                        hasAudio: format.hasAudio,
-                        hasVideo: format.hasVideo,
-                        container: 'mp4',
-                        contentLength: format.contentLength,
-                        filesize: format.contentLength ? parseInt(format.contentLength) : 0,
-                        audioQuality: format.audioBitrate ? `${format.audioBitrate}kbps` : null
-                    }));
-            }
-        } catch (streamError) {
-            console.error('❌ خطأ في جلب صيغ الفيديو:', streamError);
-            // لا نريد إيقاف العملية إذا فشل جلب الصيغ
-        }
+            return {
+                itag: format.itag || 0,
+                quality: format.qualityLabel || 'Unknown',
+                hasAudio: Boolean(format.hasAudio),
+                hasVideo: Boolean(format.hasVideo),
+                container: 'mp4',
+                fps: format.fps,
+                filesize: parseInt(format.contentLength) || 0,
+                audioQuality: format.audioBitrate ? `${format.audioBitrate}kbps` : null
+            };
+        });
 
-        console.log(`📊 عدد الصيغ المتاحة: ${formats.length}`);
+        console.log('📊 عدد الصيغ المتاحة:', formats.length);
 
-        const responseData = {
-            title: video.title || '',
-            thumbnail: video.thumbnails?.[0]?.url || '',
-            duration: video.durationInSec || 0,
-            views: video.views || 0,
+        const response = {
+            title: info.video_details.title,
+            thumbnail: info.video_details.thumbnails[0].url,
+            duration: info.video_details.durationInSec,
+            views: info.video_details.views,
             formats: formats,
-            author: video.channel?.name || '',
-            description: video.description || '',
-            publishedAt: video.uploadedAt || '',
-            likes: video.likes || 0,
-            dislikes: video.dislikes || 0
+            author: info.video_details.channel.name,
+            description: info.video_details.description,
+            publishedAt: info.video_details.uploadedAt,
+            likes: info.video_details.likes,
+            dislikes: info.video_details.dislikes
         };
 
         console.log('✅ تم تجهيز البيانات للإرسال');
-        res.json(responseData);
+        res.json(response);
     } catch (error) {
         console.error('❌ خطأ في معالجة الطلب:', error);
-        res.status(500).json({ 
-            error: error.message || 'حدث خطأ أثناء جلب معلومات الفيديو',
-            details: error.toString()
+        res.status(500).json({
+            error: error.message || 'حدث خطأ أثناء جلب معلومات الفيديو'
         });
     }
 });
@@ -155,10 +119,10 @@ app.get('/api/download', async (req, res) => {
         }
 
         console.log('🔍 جاري التحقق من الصيغ المتاحة...');
-        const videoInfo = await playdl.video_info(url);
+        const videoInfo = await playdl.video_basic_info(url);
         
         // البحث عن الصيغة في كلا المصدرين
-        const formats = videoInfo?.video_details?.formats || videoInfo.format || [];
+        const formats = videoInfo.format || [];
         const format = formats.find(f => f.itag === parseInt(itag));
 
         if (!format) {
