@@ -8,6 +8,15 @@ const API_URL = process.env.NODE_ENV === 'production'
   ? 'https://yt-savepro.vercel.app/api' 
   : 'http://localhost:3000/api';
 
+// تكوين Axios
+const api = axios.create({
+  baseURL: API_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  }
+});
+
 function App() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -111,26 +120,30 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url) return;
-    
     setLoading(true);
     setError(null);
     setVideoInfo(null);
     setSelectedFormat(null);
 
     try {
-      const response = await axios.get(`${API_URL}/info`, {
-        params: { url: encodeURIComponent(url) }
+      const encodedUrl = encodeURIComponent(url.trim());
+      const response = await api.get<VideoInfo>('/info', {
+        params: { url: encodedUrl }
       });
-      const data = response.data;
 
-      if (!response.ok) {
-        throw new Error((data as ApiError).error || 'Failed to fetch video information');
+      if (response.status !== 200) {
+        throw new Error('فشل في جلب معلومات الفيديو');
       }
 
-      setVideoInfo(data as VideoInfo);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      const data = response.data;
+      if (!data || !data.formats || data.formats.length === 0) {
+        throw new Error('لم يتم العثور على معلومات الفيديو');
+      }
+
+      setVideoInfo(data);
+    } catch (error) {
+      console.error('Error fetching video info:', error);
+      setError(error instanceof Error ? error.message : 'حدث خطأ أثناء جلب معلومات الفيديو');
     } finally {
       setLoading(false);
     }
@@ -138,18 +151,22 @@ function App() {
 
   const handleDownload = async (format: VideoFormat) => {
     try {
-      window.location.href = `${API_URL}/download?url=${encodeURIComponent(url)}&itag=${format.itag}`;
+      const encodedUrl = encodeURIComponent(url.trim());
+      window.location.href = `${API_URL}/download?url=${encodedUrl}&itag=${format.itag}`;
     } catch (error) {
       console.error('Download error:', error);
+      setError(error instanceof Error ? error.message : 'حدث خطأ أثناء التحميل');
     }
   };
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      setUrl(text);
-    } catch (err) {
-      console.error('Failed to read clipboard:', err);
+      if (text.includes('youtube.com') || text.includes('youtu.be')) {
+        setUrl(text);
+      }
+    } catch (error) {
+      console.error('Paste error:', error);
     }
   };
 
