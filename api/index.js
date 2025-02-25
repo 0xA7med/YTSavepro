@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const ytdl = require('ytdl-core');
+const ytdl = require('@distube/ytdl-core');
 
 // تكوين خيارات الطلب
 const requestOptions = {
@@ -54,7 +54,8 @@ const processFormats = (formats) => {
           filesize: format.contentLength ? parseInt(format.contentLength) : 0,
           audioQuality: format.audioBitrate ? `${format.audioBitrate}kbps` : null,
           width: format.width || 0,
-          height: format.height || 0
+          height: format.height || 0,
+          mimeType: format.mimeType || 'video/mp4'
         };
       } catch (error) {
         console.error('خطأ في معالجة الصيغة:', error);
@@ -65,15 +66,12 @@ const processFormats = (formats) => {
     .sort((a, b) => {
       try {
         if (a.hasVideo && b.hasVideo) {
-          // استخراج الأرقام من النص (مثل 1080p, 720p)
           const qualityA = parseInt(a.quality.replace(/\D/g, '')) || a.height || 0;
           const qualityB = parseInt(b.quality.replace(/\D/g, '')) || b.height || 0;
           return qualityB - qualityA;
         }
-        // وضع ملفات الصوت في النهاية
         if (!a.hasVideo && b.hasVideo) return 1;
         if (a.hasVideo && !b.hasVideo) return -1;
-        // ترتيب ملفات الصوت حسب جودة الصوت
         return (parseInt(b.audioQuality) || 0) - (parseInt(a.audioQuality) || 0);
       } catch {
         return 0;
@@ -92,7 +90,6 @@ app.get('/api/info', async (req, res) => {
 
     console.log('🔍 جاري جلب معلومات الفيديو:', url);
     
-    // إضافة تأخير عشوائي للحماية من الحظر
     await delay(Math.random() * 1000);
     
     const info = await ytdl.getInfo(url, { requestOptions });
@@ -114,11 +111,12 @@ app.get('/api/info', async (req, res) => {
       views: parseInt(info.videoDetails.viewCount) || 0,
       formats,
       author: info.videoDetails.author?.name || '',
-      description: info.videoDetails.description || ''
+      description: info.videoDetails.description || '',
+      uploadDate: info.videoDetails.uploadDate || '',
+      category: info.videoDetails.category || ''
     };
 
-    // تخزين مؤقت للنتائج
-    res.set('Cache-Control', 'public, max-age=300'); // تخزين لمدة 5 دقائق
+    res.set('Cache-Control', 'public, max-age=300');
     res.json(responseData);
   } catch (error) {
     console.error('❌ خطأ في جلب معلومات الفيديو:', error);
@@ -138,7 +136,6 @@ app.get('/api/download', async (req, res) => {
       return res.status(400).json({ error: 'يجب توفير رابط فيديو صالح والجودة المطلوبة' });
     }
 
-    // إضافة تأخير عشوائي للحماية من الحظر
     await delay(Math.random() * 1000);
 
     const info = await ytdl.getInfo(url, { requestOptions });
@@ -148,25 +145,34 @@ app.get('/api/download', async (req, res) => {
       throw new Error('الجودة المطلوبة غير متوفرة');
     }
 
-    // تنظيف اسم الملف
     const sanitizedTitle = info.videoDetails.title
-      .replace(/[^\w\s-]/g, '') // إزالة الأحرف الخاصة
+      .replace(/[^\w\s-]/g, '')
       .trim()
-      .replace(/\s+/g, '_'); // استبدال المسافات بـ _
+      .replace(/\s+/g, '_');
 
-    res.setHeader('Content-Type', 'video/mp4');
+    const contentType = format.mimeType?.split(';')[0] || 'video/mp4';
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${sanitizedTitle}.mp4"`);
 
     const stream = ytdl(url, { 
       format,
-      requestOptions
+      requestOptions,
+      highWaterMark: 32 * 1024 
     });
 
-    // معالجة أخطاء التدفق
     stream.on('error', (error) => {
       console.error('❌ خطأ في تدفق الفيديو:', error);
       if (!res.headersSent) {
         res.status(500).json({ error: 'فشل في تحميل الفيديو' });
+      }
+    });
+
+    let downloadedBytes = 0;
+    stream.on('data', (chunk) => {
+      downloadedBytes += chunk.length;
+      if (format.contentLength) {
+        const progress = (downloadedBytes / format.contentLength * 100).toFixed(2);
+        console.log(`تقدم التحميل: ${progress}%`);
       }
     });
 
